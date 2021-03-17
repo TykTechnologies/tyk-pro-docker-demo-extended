@@ -13,6 +13,7 @@ portal_organisation_2_base_url="http://acme-portal.localhost:3000"
 gateway_base_url="http://tyk-gateway.localhost:8080"
 gateway_base_url_tcp="tyk-gateway.localhost:8086"
 gateway2_base_url="https://tyk-gateway-2.localhost:8081"
+policy_data=$(cat deployments/tyk/data/tyk-dashboard/policies.json)
 
 log_message "Checking Dashboard licence exists"
 if ! grep -q "DASHBOARD_LICENCE=" .env
@@ -192,107 +193,6 @@ log_json_result "$(curl $dashboard_base_url/api/hooks -s \
   -d @deployments/tyk/data/tyk-dashboard/webhook-webhook-receiver-api-post.json 2>> bootstrap.log)"
 bootstrap_progress
 
-# Portals
-
-log_message "Creating Portal for organisation $organisation_name"
-
-log_message "  Creating Portal default settings"
-log_json_result "$(curl $dashboard_base_url/api/portal/configuration -s \
-  -H "Authorization: $dashboard_user_api_credentials" \
-  -d "{}" 2>> bootstrap.log)"
-bootstrap_progress
-
-log_message "  Initialising Catalogue"
-result=$(curl $dashboard_base_url/api/portal/catalogue -s \
-  -H "Authorization: $dashboard_user_api_credentials" \
-  -d '{"org_id": "'$organisation_id'"}' 2>> bootstrap.log)
-catalogue_id=$(echo "$result" | jq -r '.Message')
-log_json_result "$result"
-bootstrap_progress
-
-log_message "  Creating Portal home page"
-log_json_result "$(curl $dashboard_base_url/api/portal/pages -s \
-  -H "Authorization: $dashboard_user_api_credentials" \
-  -d @deployments/tyk/data/tyk-dashboard/portal-home-page.json 2>> bootstrap.log)"
-bootstrap_progress
-
-log_message "  Creating Portal user"
-portal_user_email=$(jq -r '.email' deployments/tyk/data/tyk-dashboard/portal-user.json)
-portal_user_password=$(jq -r '.password' deployments/tyk/data/tyk-dashboard/portal-user.json)
-log_json_result "$(curl $dashboard_base_url/api/portal/developers -s \
-  -H "Authorization: $dashboard_user_api_credentials" \
-  -d '{
-      "email": "'$portal_user_email'",
-      "password": "'$portal_user_password'",
-      "org_id": "'$organisation_id'"
-    }' 2>> bootstrap.log)"
-bootstrap_progress
-
-log_message "  Creating documentation"
-policies=$(curl $dashboard_base_url/api/portal/policies?p=-1 -s \
-  -H "Authorization:$dashboard_user_api_credentials" 2>> bootstrap.log)
-echo -n '{
-          "api_id":"",
-          "doc_type":"swagger",
-          "documentation":"' >/tmp/swagger_encoded.out
-cat deployments/tyk/data/tyk-dashboard/documentation-swagger-petstore.json | base64 >>/tmp/swagger_encoded.out
-echo '"}' >>/tmp/swagger_encoded.out
-result=$(curl $dashboard_base_url/api/portal/documentation -s \
-  -H "Authorization: $dashboard_user_api_credentials" \
-  -d "@/tmp/swagger_encoded.out" \
-     2>> bootstrap.log)
-documentation_swagger_petstore_id=$(echo "$result" | jq -r '.Message')
-log_json_result "$result"
-rm /tmp/swagger_encoded.out
-bootstrap_progress
-
-log_message "  Updating catalogue"
-policy_data=$(cat deployments/tyk/data/tyk-dashboard/policies.json)
-policies_swagger_petstore_id=$(echo $policy_data | jq -r '.Data[] | select(.name=="Swagger Petstore Policy") | .id')
-catalogue_data=$(cat deployments/tyk/data/tyk-dashboard/catalogue.json | \
-  sed 's/CATALOGUE_ID/'"$catalogue_id"'/' | \
-  sed 's/ORGANISATION_ID/'"$organisation_id"'/' | \
-  sed 's/CATALOGUE_SWAGGER_PETSTORE_POLICY_ID/'"$policies_swagger_petstore_id"'/' | \
-  sed 's/CATALOGUE_SWAGGER_PETSTORE_DOCUMENTATION_ID/'"$documentation_swagger_petstore_id"'/')
-log_json_result "$(curl $dashboard_base_url/api/portal/catalogue -X 'PUT' -s \
-  -H "Authorization: $dashboard_user_api_credentials" \
-  -d "$(echo $catalogue_data)" 2>> bootstrap.log)"
-bootstrap_progress
-
-log_message "Creating Portal for organisation $organisation_2_name"
-
-log_message "  Creating Portal default settings"
-log_json_result "$(curl $dashboard_base_url/api/portal/configuration -s \
-  -H "Authorization: $dashboard_user_organisation_2_api_credentials" \
-  -d "{}" 2>> bootstrap.log)"
-bootstrap_progress
-
-log_message "  Initialising Catalogue"
-result=$(curl $dashboard_base_url/api/portal/catalogue -s \
-  -H "Authorization: $dashboard_user_organisation_2_api_credentials" \
-  -d '{"org_id": "'$organisation_2_id'"}' 2>> bootstrap.log)
-catalogue_id=$(echo "$result" | jq -r '.Message')
-log_json_result "$result"
-bootstrap_progress
-
-log_message "  Creating Portal home page"
-log_json_result "$(curl $dashboard_base_url/api/portal/pages -s \
-  -H "Authorization: $dashboard_user_organisation_2_api_credentials" \
-  -d @deployments/tyk/data/tyk-dashboard/portal-home-page.json 2>> bootstrap.log)"
-bootstrap_progress
-
-log_message "  Creating Portal user"
-portal_user_email=$(jq -r '.email' deployments/tyk/data/tyk-dashboard/portal-user.json)
-portal_user_password=$(jq -r '.password' deployments/tyk/data/tyk-dashboard/portal-user.json)
-log_json_result "$(curl $dashboard_base_url/api/portal/developers -s \
-  -H "Authorization: $dashboard_user_organisation_2_api_credentials" \
-  -d '{
-      "email": "'$portal_user_email'",
-      "password": "'$portal_user_password'",
-      "org_id": "'$organisation_2_id'"
-    }' 2>> bootstrap.log)"
-bootstrap_progress
-
 # APIs & Policies
 
 # Broken references occur because the ID of the data changes when it is created
@@ -378,6 +278,106 @@ do
   log_message "  $policy_name:$result"
   rm /tmp/policy_graphql_update_data.out  
 done
+bootstrap_progress
+
+# Portals
+
+log_message "Creating Portal for organisation $organisation_name"
+
+log_message "  Creating Portal default settings"
+log_json_result "$(curl $dashboard_base_url/api/portal/configuration -s \
+  -H "Authorization: $dashboard_user_api_credentials" \
+  -d "{}" 2>> bootstrap.log)"
+bootstrap_progress
+
+log_message "  Initialising Catalogue"
+result=$(curl $dashboard_base_url/api/portal/catalogue -s \
+  -H "Authorization: $dashboard_user_api_credentials" \
+  -d '{"org_id": "'$organisation_id'"}' 2>> bootstrap.log)
+catalogue_id=$(echo "$result" | jq -r '.Message')
+log_json_result "$result"
+bootstrap_progress
+
+log_message "  Creating Portal home page"
+log_json_result "$(curl $dashboard_base_url/api/portal/pages -s \
+  -H "Authorization: $dashboard_user_api_credentials" \
+  -d @deployments/tyk/data/tyk-dashboard/portal-home-page.json 2>> bootstrap.log)"
+bootstrap_progress
+
+log_message "  Creating Portal user"
+portal_user_email=$(jq -r '.email' deployments/tyk/data/tyk-dashboard/portal-user.json)
+portal_user_password=$(jq -r '.password' deployments/tyk/data/tyk-dashboard/portal-user.json)
+log_json_result "$(curl $dashboard_base_url/api/portal/developers -s \
+  -H "Authorization: $dashboard_user_api_credentials" \
+  -d '{
+      "email": "'$portal_user_email'",
+      "password": "'$portal_user_password'",
+      "org_id": "'$organisation_id'"
+    }' 2>> bootstrap.log)"
+bootstrap_progress
+
+log_message "  Creating documentation"
+policies=$(curl $dashboard_base_url/api/portal/policies?p=-1 -s \
+  -H "Authorization:$dashboard_user_api_credentials" 2>> bootstrap.log)
+echo -n '{
+          "api_id":"",
+          "doc_type":"swagger",
+          "documentation":"' >/tmp/swagger_encoded.out
+cat deployments/tyk/data/tyk-dashboard/documentation-swagger-petstore.json | base64 >>/tmp/swagger_encoded.out
+echo '"}' >>/tmp/swagger_encoded.out
+result=$(curl $dashboard_base_url/api/portal/documentation -s \
+  -H "Authorization: $dashboard_user_api_credentials" \
+  -d "@/tmp/swagger_encoded.out" \
+     2>> bootstrap.log)
+documentation_swagger_petstore_id=$(echo "$result" | jq -r '.Message')
+log_json_result "$result"
+rm /tmp/swagger_encoded.out
+bootstrap_progress
+
+log_message "  Updating catalogue"
+policies_swagger_petstore_id=$(echo $policy_data | jq -r '.Data[] | select(.name=="Swagger Petstore Policy") | .id')
+catalogue_data=$(cat deployments/tyk/data/tyk-dashboard/catalogue.json | \
+  sed 's/CATALOGUE_ID/'"$catalogue_id"'/' | \
+  sed 's/ORGANISATION_ID/'"$organisation_id"'/' | \
+  sed 's/CATALOGUE_SWAGGER_PETSTORE_POLICY_ID/'"$policies_swagger_petstore_id"'/' | \
+  sed 's/CATALOGUE_SWAGGER_PETSTORE_DOCUMENTATION_ID/'"$documentation_swagger_petstore_id"'/')
+log_json_result "$(curl $dashboard_base_url/api/portal/catalogue -X 'PUT' -s \
+  -H "Authorization: $dashboard_user_api_credentials" \
+  -d "$(echo $catalogue_data)" 2>> bootstrap.log)"
+bootstrap_progress
+
+log_message "Creating Portal for organisation $organisation_2_name"
+
+log_message "  Creating Portal default settings"
+log_json_result "$(curl $dashboard_base_url/api/portal/configuration -s \
+  -H "Authorization: $dashboard_user_organisation_2_api_credentials" \
+  -d "{}" 2>> bootstrap.log)"
+bootstrap_progress
+
+log_message "  Initialising Catalogue"
+result=$(curl $dashboard_base_url/api/portal/catalogue -s \
+  -H "Authorization: $dashboard_user_organisation_2_api_credentials" \
+  -d '{"org_id": "'$organisation_2_id'"}' 2>> bootstrap.log)
+catalogue_id=$(echo "$result" | jq -r '.Message')
+log_json_result "$result"
+bootstrap_progress
+
+log_message "  Creating Portal home page"
+log_json_result "$(curl $dashboard_base_url/api/portal/pages -s \
+  -H "Authorization: $dashboard_user_organisation_2_api_credentials" \
+  -d @deployments/tyk/data/tyk-dashboard/portal-home-page.json 2>> bootstrap.log)"
+bootstrap_progress
+
+log_message "  Creating Portal user"
+portal_user_email=$(jq -r '.email' deployments/tyk/data/tyk-dashboard/portal-user.json)
+portal_user_password=$(jq -r '.password' deployments/tyk/data/tyk-dashboard/portal-user.json)
+log_json_result "$(curl $dashboard_base_url/api/portal/developers -s \
+  -H "Authorization: $dashboard_user_organisation_2_api_credentials" \
+  -d '{
+      "email": "'$portal_user_email'",
+      "password": "'$portal_user_password'",
+      "org_id": "'$organisation_2_id'"
+    }' 2>> bootstrap.log)"
 bootstrap_progress
 
 # System
